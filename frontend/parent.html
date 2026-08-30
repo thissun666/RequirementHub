@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>需求中枢 - 管理端</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Segoe UI','Microsoft YaHei',sans-serif; background:#f4f6fa; color:#1e293b; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+header { height:56px; background:#fff; border-bottom:1px solid #e9eef5; display:flex; align-items:center; justify-content:space-between; padding:0 20px; flex-shrink:0; }
+.brand { font-size:17px; font-weight:700; }
+.brand .tag { font-size:12px; font-weight:400; color:#94a3b8; margin-left:8px; }
+.header-right { display:flex; align-items:center; gap:12px; font-size:14px; }
+.btn-logout { background:#f1f5f9; border:none; padding:7px 14px; border-radius:8px; cursor:pointer; font-size:13px; }
+.btn-logout:hover { background:#e2e8f0; }
+.layout { flex:1; display:flex; min-height:0; }
+.sidebar { width:210px; background:#fff; border-right:1px solid #e9eef5; padding:14px 10px; display:flex; flex-direction:column; gap:4px; flex-shrink:0; overflow-y:auto; }
+.nav-item { padding:11px 14px; border-radius:10px; cursor:pointer; font-size:14px; color:#475569; transition:background .12s; border:none; background:transparent; text-align:left; width:100%; }
+.nav-item:hover { background:#f1f5f9; }
+.nav-item.active { background:#eff6ff; color:#2563eb; font-weight:600; }
+.main { flex:1; overflow-y:auto; padding:18px 22px; min-width:0; }
+.right-toggle { display:flex; gap:8px; margin-bottom:14px; flex-shrink:0; }
+.right-toggle button { padding:8px 18px; border-radius:10px; border:1px solid #e2e8f0; background:#fff; cursor:pointer; font-size:13px; color:#475569; }
+.right-toggle button.active { background:#2563eb; color:#fff; border-color:#2563eb; }
+.panel-card { background:#fff; border:1px solid #e9eef5; border-radius:12px; padding:16px 18px; margin-bottom:14px; }
+.panel-card h3 { font-size:15px; margin-bottom:10px; }
+.muted { color:#94a3b8; font-size:12px; }
+
+/* ===== AI助手气泡样式 ===== */
+.assistant-welcome { background:linear-gradient(135deg,#eff6ff,#f0fdf4); border-radius:12px; padding:18px 20px; margin-bottom:12px; flex-shrink:0; }
+.assistant-welcome h3 { font-size:16px; margin-bottom:6px; }
+.quick-chips { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; flex-shrink:0; }
+.quick-chips button { background:#fff; border:1px solid #e2e8f0; border-radius:20px; padding:7px 14px; font-size:13px; cursor:pointer; color:#475569; }
+.quick-chips button:hover { border-color:#2563eb; color:#2563eb; }
+.ans-q-bubble { display:flex; justify-content:flex-end; margin-bottom:10px; }
+.ans-q-bubble span { background:#2563eb; color:#fff; padding:9px 14px; border-radius:14px 14px 4px 14px; font-size:14px; max-width:100%; }
+.ans-block { background:#fff; border:1px solid #e9eef5; border-radius:12px; padding:12px 16px; margin-bottom:10px; font-size:14px; line-height:1.7; white-space:pre-wrap; }
+.assistant-input-area { background:#fff; border:1.5px solid #e2e8f0; border-radius:16px; padding:10px 10px 10px 18px; display:flex; align-items:center; gap:12px; min-height:64px; box-shadow:0 1px 2px rgba(15,23,42,.04); transition:border-color .15s, box-shadow .15s; flex-shrink:0; }
+.assistant-input-area:focus-within { border-color:#2563eb; box-shadow:0 0 0 4px rgba(37,99,235,.10); }
+.assistant-input-area input { flex:1; border:none; outline:none; font-size:15px; background:transparent; padding:10px 0; color:#1e293b; }
+.assistant-input-area input::placeholder { color:#9aa7b8; }
+.btn-send-circle { background:linear-gradient(135deg,#4f8bff,#2563eb); color:#fff; border:none; min-width:88px; height:44px; border-radius:12px; cursor:pointer; font-size:15px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 4px 10px rgba(37,99,235,.28); transition:transform .12s, filter .12s; }
+.btn-send-circle:hover { filter:brightness(1.08); transform:translateY(-1px); }
+
+/* ===== AI助手：占满视口的聊天布局（消息少时贴底；溢出时可正常滚动）===== */
+#tab-requirements { display:flex; flex-direction:column; height:calc(100vh - 145px); }
+#assistantPanel { display:flex; flex-direction:column; flex:1; min-height:0; }
+#assistantMessages { flex:1; overflow-y:auto; min-height:0; display:flex; flex-direction:column; padding:4px 2px 10px; }
+#assistantMessages > :first-child { margin-top:auto; }
+#listPanel { flex:1; min-height:0; overflow-y:auto; }
+.ans-block { align-self:flex-start; max-width:88%; }
+.ans-q-bubble { align-self:flex-end; max-width:88%; margin-left:auto; }
+
+/* ===== 需求列表 ===== */
+.filter-bar { display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+.filter-bar select { padding:9px 14px; border:1px solid #e2e8f0; border-radius:10px; font-size:13px; background:#fff; cursor:pointer; outline:none; }
+.req-item { background:#fff; border:1px solid #e9eef5; border-radius:12px; padding:13px 16px; margin-bottom:10px; cursor:pointer; transition:box-shadow .12s; }
+.req-item:hover { box-shadow:0 4px 12px rgba(15,23,42,.08); }
+.req-item .req-title { font-weight:600; font-size:14px; margin-bottom:5px; }
+.req-item .req-meta { font-size:12px; color:#94a3b8; display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+.empty-state { text-align:center; color:#94a3b8; padding:50px 20px; }
+.empty-state .big { font-size:42px; margin-bottom:10px; }
+.status-tag { font-size:12px; padding:3px 10px; border-radius:12px; font-weight:600; }
+.status-tag.pending { background:#fef9c3; color:#a16207; }
+.status-tag.processing { background:#dbeafe; color:#1d4ed8; }
+.status-tag.waiting { background:#ffedd5; color:#c2410c; }
+.status-tag.resolved { background:#dcfce7; color:#15803d; }
+.priority-high { color:#dc2626; font-weight:700; }
+.priority-medium { color:#d97706; font-weight:600; }
+.priority-low { color:#16a34a; font-weight:600; }
+
+/* ===== 报告 ===== */
+.report-toolbar { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
+.report-card { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin:14px 0; }
+.report-stat { background:#fff; border:1px solid #e9eef5; border-radius:12px; padding:16px; text-align:center; }
+.report-stat .number { font-size:28px; font-weight:800; }
+.report-stat .label { font-size:12px; color:#94a3b8; margin-top:4px; }
+
+/* ===== 账号表格 ===== */
+.user-table { width:100%; border-collapse:collapse; font-size:13px; }
+.user-table th, .user-table td { border-bottom:1px solid #f1f5f9; padding:10px 8px; text-align:left; }
+.user-table th { background:#f8fafc; color:#475569; font-weight:600; }
+.btn-mini { padding:6px 14px; border-radius:8px; border:none; cursor:pointer; font-size:12px; font-weight:600; margin-right:6px; }
+.btn-mini.primary { background:linear-gradient(135deg,#4f8bff,#2563eb); color:#fff; }
+.btn-mini.primary:hover { filter:brightness(1.08); }
+.btn-mini.danger { background:#fef2f2; color:#dc2626; border:1px solid #fecaca; }
+.btn-mini.danger:hover { background:#fee2e2; }
+
+/* ===== 知识库 ===== */
+.kb-upload-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+.filepick-btn { display:inline-flex; align-items:center; gap:8px; background:#fff; border:1.5px dashed #94a3b8; color:#475569; padding:10px 18px; border-radius:10px; cursor:pointer; font-size:13px; transition:border-color .15s,color .15s; }
+.filepick-btn:hover { border-color:#2563eb; color:#2563eb; }
+#knowledgeFileName { font-size:13px; color:#475569; }
+.knowledge-item { display:flex; justify-content:space-between; align-items:center; padding:11px 14px; border:1px solid #eef2f7; border-radius:10px; margin-bottom:8px; font-size:13px; background:#fff; }
+
+/* ===== 上传浮动状态窗 ===== */
+#kbUploadFloat { position:fixed; top:70px; right:20px; z-index:1500; background:#fff; border:1px solid #e9eef5;
+  border-radius:14px; box-shadow:0 10px 30px rgba(15,23,42,.15); padding:14px 18px; display:none; align-items:center; gap:12px; min-width:240px; }
+#kbUploadFloat .spinner { width:20px; height:20px; border:3px solid #dbeafe; border-top-color:#2563eb; border-radius:50%; animation:spin .8s linear infinite; flex-shrink:0; }
+#kbUploadFloat.done .spinner { border-color:#dcfce7; border-top-color:#16a34a; animation:none; }
+#kbUploadFloat .kb-float-title { font-size:13px; font-weight:600; }
+#kbUploadFloat .kb-float-sub { font-size:12px; color:#94a3b8; margin-top:2px; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* ===== 按钮/弹窗/Toast ===== */
+.btn-primary { background:linear-gradient(135deg,#3b82f6,#2563eb); color:#fff; border:none; padding:9px 20px; border-radius:10px; cursor:pointer; font-size:14px; font-weight:600; }
+.btn-primary:hover { filter:brightness(1.08); }
+.btn-secondary { background:#fff; border:1px solid #e2e8f0; color:#475569; padding:8px 16px; border-radius:10px; cursor:pointer; font-size:13px; }
+.btn-secondary:hover { border-color:#2563eb; color:#2563eb; }
+.modal { display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; align-items:center; justify-content:center; }
+.modal-content { background:#fff; border-radius:16px; padding:24px 26px; width:440px; max-width:92vw; max-height:86vh; overflow-y:auto; position:relative; }
+.modal-close { position:absolute; top:12px; right:14px; background:none; border:none; font-size:22px; cursor:pointer; color:#94a3b8; }
+.modal h3 { font-size:17px; margin-bottom:16px; }
+.form-group { margin-bottom:14px; }
+.form-group label { display:block; font-size:13px; color:#475569; margin-bottom:5px; font-weight:600; }
+.form-group input, .form-group select, .form-group textarea { width:100%; padding:9px 12px; border:1px solid #e2e8f0; border-radius:9px; font-size:14px; outline:none; font-family:inherit; }
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color:#2563eb; box-shadow:0 0 0 3px rgba(37,99,235,.10); }
+.modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:18px; }
+.modal-actions button { padding:9px 20px; border-radius:10px; border:1px solid #e2e8f0; background:#fff; cursor:pointer; font-size:14px; }
+.modal-actions .btn-primary { border:none; }
+.req-detail-msg { padding:8px 0; border-bottom:1px solid #f1f5f9; font-size:13px; line-height:1.6; }
+.detail-reply-row { display:flex; gap:8px; margin-top:12px; }
+.detail-reply-row input { flex:1; padding:9px 12px; border:1px solid #e2e8f0; border-radius:9px; outline:none; }
+#toastContainer { position:fixed; top:16px; right:16px; z-index:2000; display:flex; flex-direction:column; gap:8px; }
+.toast { background:#1e293b; color:#fff; padding:10px 18px; border-radius:10px; font-size:13px; box-shadow:0 6px 18px rgba(0,0,0,.2); animation:toastIn .2s; }
+.toast.success { background:#16a34a; } .toast.error { background:#dc2626; } .toast.info { background:#2563eb; }
+@keyframes toastIn { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:none; } }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="brand">📋 需求中枢 <span class="tag">管理员端</span></div>
+    <div class="header-right">
+        <span>👤 <span id="usernameDisplay">管理员</span></span>
+        <button class="btn-logout" onclick="logoutSafe()">退出</button>
+    </div>
+</header>
+
+<div class="layout">
+    <aside class="sidebar">
+        <button class="nav-item active" data-tab="requirements" onclick="switchMainTab('requirements')">📋 任务传递</button>
+        <button class="nav-item" data-tab="report" onclick="switchMainTab('report')">📊 解决报告</button>
+        <button class="nav-item" data-tab="users" onclick="switchMainTab('users')">👥 账号管理</button>
+        <button class="nav-item" data-tab="settings" onclick="switchMainTab('settings')">⚙️ 模型设置</button>
+        <button class="nav-item" data-tab="knowledge" onclick="switchMainTab('knowledge')">📚 企业知识库</button>
+    </aside>
+
+    <div class="main">
+        <!-- ① 任务传递 -->
+        <section class="tab-section" id="tab-requirements">
+            <div class="right-toggle">
+                <button id="assistantTabBtn" onclick="switchRightPanel('assistant')">🤖 AI助手</button>
+                <button id="listTabBtn" onclick="switchRightPanel('list')">📋 需求列表</button>
+            </div>
+
+            <div id="assistantPanel" style="display:none;">
+                <div id="assistantMessages">
+                    <div class="assistant-welcome">
+                        <h3>欢迎回来，管理员 👋</h3>
+                        <div class="muted">我可以帮你查询需求、分析重点，回答基于企业知识库的问题。试试快捷提问，或直接在底部输入。</div>
+                    </div>
+                </div>
+                <div class="quick-chips">
+                    <button onclick="quickAsk('有哪些待处理的需求？按优先级列出前5个')">⚠️ 待办重点</button>
+                    <button onclick="quickAsk('根据企业知识库回答：公司的报销制度是什么？')">📚 问知识库</button>
+                    <button onclick="quickAsk('最近有哪些新的需求动态？')">📊 最近动态</button>
+                    <button onclick="clearAssistantHistory()" title="清空对话历史">🗑 清空</button>
+                </div>
+                <div class="assistant-input-area">
+                    <span style="font-size:18px;">💬</span>
+                    <input type="text" id="assistantInput" placeholder="向AI助手提问…（Enter 发送）"
+                           onkeydown="if(event.key==='Enter'){event.preventDefault();askAssistant();}">
+                    <button class="btn-send-circle" type="button" onclick="askAssistant()">发送 ➤</button>
+                </div>
+            </div>
+
+            <div id="listPanel" style="display:none;">
+                <div class="filter-bar">
+                    <select id="statusFilter" onchange="filterRequirements()">
+                        <option value="">全部状态</option>
+                        <option value="待处理">待处理</option>
+                        <option value="处理中">处理中</option>
+                        <option value="待反馈">待反馈</option>
+                        <option value="已解决">已解决</option>
+                    </select>
+                    <select id="priorityFilter" onchange="filterRequirements()">
+                        <option value="">全部优先级</option>
+                        <option value="高">🔴 高</option>
+                        <option value="中">🟡 中</option>
+                        <option value="低">🟢 低</option>
+                    </select>
+                </div>
+                <div id="requirementList"><div class="muted" style="padding:20px;">加载中...</div></div>
+            </div>
+        </section>
+
+        <!-- ② 解决报告 -->
+        <section class="tab-section" id="tab-report" style="display:none;">
+            <div class="panel-card">
+                <h3>📊 解决报告 · 数据总览</h3>
+                <div class="report-toolbar">
+                    <button class="btn-secondary" type="button" onclick="if(typeof loadReport==='function')loadReport();">🔄 刷新</button>
+                    <button class="btn-secondary" type="button" onclick="if(typeof exportReport==='function')exportReport('monthly');">📤 导出月报</button>
+                    <button class="btn-secondary" type="button" onclick="if(typeof exportReport==='function')exportReport('yearly');">📤 导出年报</button>
+                </div>
+                <div class="muted">导出HTML含图表，浏览器打开后 Ctrl+P 存为PDF供会议用</div>
+            </div>
+            <div id="reportContainer"><div class="muted" style="padding:20px;">报告生成中...</div></div>
+        </section>
+
+        <!-- ③ 账号管理 -->
+        <section class="tab-section" id="tab-users" style="display:none;">
+            <div class="panel-card">
+                <h3>👥 子节点账号管理</h3>
+                <div style="margin-bottom:12px;">
+                    <button class="btn-primary" type="button" onclick="openUserModalSafe()">＋ 添加账号</button>
+                </div>
+                <table class="user-table">
+                    <thead><tr><th>ID</th><th>用户名</th><th>部门</th><th>职位</th><th>创建时间</th><th>操作</th></tr></thead>
+                    <tbody id="usersTableBody"><tr><td colspan="6" class="muted">加载中...</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ④ 模型设置 -->
+        <section class="tab-section" id="tab-settings" style="display:none;">
+            <div class="panel-card">
+                <h3>⚙️ AI 模型设置（系统级，全体共用）</h3>
+                <div class="form-group"><label>提供商</label>
+                    <select id="modelProvider">
+                        <option value="zhipu">智谱</option>
+                        <option value="siliconflow">硅基流动</option>
+                        <option value="ollama">Ollama (本地)</option>
+                    </select></div>
+                <div class="form-group"><label>API Key</label>
+                    <input type="password" id="modelApiKey" placeholder="sk-..."></div>
+                <div class="form-group"><label>模型名称</label>
+                    <input type="text" id="modelName" placeholder="glm-4-flash"></div>
+                <div class="form-group"><label>Base URL</label>
+                    <input type="text" id="modelBaseUrl" placeholder="https://open.bigmodel.cn/api/paas/v4"></div>
+                <button class="btn-primary" type="button" onclick="saveSettings()">保存设置</button>
+            </div>
+        </section>
+
+        <!-- ⑤ 企业知识库 -->
+        <section class="tab-section" id="tab-knowledge" style="display:none;">
+            <div class="panel-card">
+                <h3>📚 企业知识库</h3>
+                <div class="muted" style="margin-bottom:10px;">上传文档（txt / md / docx）入库后，AI助手即可引用回答</div>
+                <div class="kb-upload-row">
+                    <input type="file" id="knowledgeFile" accept=".txt,.md,.docx" style="display:none;" onchange="onKnowledgeFilePicked(this)">
+                    <button class="filepick-btn" type="button" onclick="document.getElementById('knowledgeFile').click()">📄 选择文件</button>
+                    <span id="knowledgeFileName" class="muted">未选择文件</span>
+                    <button class="btn-primary" type="button" id="kbUploadBtn" onclick="uploadKnowledgeFile()">⬆ 上传入库</button>
+                </div>
+                <div class="form-group" style="margin-top:14px;"><label>或粘贴文本</label>
+                    <textarea id="knowledgeContent" rows="4" placeholder="粘贴企业制度/FAQ文本…"></textarea></div>
+                <div class="form-group"><label>文档标题</label>
+                    <input type="text" id="knowledgeTitle" placeholder="如：报销制度V3.2"></div>
+                <button class="btn-primary" type="button" onclick="saveKnowledgeText()">保存到知识库</button>
+            </div>
+            <div class="panel-card">
+                <h3>已入库文档</h3>
+                <div id="knowledgeList"><div class="muted">加载中...</div></div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<!-- 上传浮动状态窗 -->
+<div id="kbUploadFloat">
+    <div class="spinner"></div>
+    <div><div class="kb-float-title" id="kbFloatTitle">正在上传…</div><div class="kb-float-sub" id="kbFloatSub"></div></div>
+</div>
+
+<!-- 添加/编辑账号弹窗 -->
+<div class="modal" id="userModal" style="display:none;">
+    <div class="modal-content">
+        <button class="modal-close" type="button" onclick="closeUserModalSafe()">×</button>
+        <h3 id="userModalTitle">添加子节点账号</h3>
+        <input type="hidden" id="userId">
+        <div class="form-group"><label>用户名</label><input type="text" id="newUsername"></div>
+        <div class="form-group"><label>密码（编辑时留空表示不修改）</label><input type="password" id="newPassword"></div>
+        <div class="form-group"><label>部门</label><input type="text" id="newDepartment"></div>
+        <div class="form-group"><label>职位</label>
+            <select id="newPosition"><option value="">（未设置）</option></select></div>
+        <div class="modal-actions">
+            <button type="button" onclick="closeUserModalSafe()">取消</button>
+            <button type="button" class="btn-primary" onclick="saveUser()">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- 需求详情弹窗 -->
+<div class="modal" id="requirementModal" style="display:none;">
+    <div class="modal-content" style="width:660px;">
+        <button class="modal-close" type="button" onclick="closeRequirementModal()">×</button>
+        <h3 id="reqModalTitle">需求详情</h3>
+        <div id="reqDetailBody">加载中...</div>
+    </div>
+</div>
+
+<div id="toastContainer"></div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/ui.js"></script>
+<script src="/js/websocket.js"></script>
+<script src="/js/settings.js"></script>
+<script src="/js/parent.js"></script>
+
+<!-- ============================================================
+     ★★★ 全功能接管脚本（必须在 parent.js 之后） ★★★
+     ============================================================ -->
+<script>
+/* ---------- 基础工具 ---------- */
+function _toast(msg, type) {
+    if (typeof showToast === 'function') { showToast(msg, type || 'info'); return; }
+    const c = document.getElementById('toastContainer');
+    const t = document.createElement('div');
+    t.className = 'toast ' + (type || ''); t.textContent = msg;
+    c.appendChild(t); setTimeout(() => t.remove(), 3000);
+}
+function _confirmBox(msg, okText) {
+    if (typeof showConfirm === 'function') return showConfirm(msg, { title: '确认操作', danger: true, okText: okText || '确定' });
+    return Promise.resolve(window.confirm(msg));
+}
+/* ---------- 认证Token自动探测（兼容任意存储键名） ---------- */
+function _getToken() {
+    const looksJwt = v => typeof v === 'string' && v.startsWith('eyJ') && v.split('.').length === 3;
+    const clean = v => String(v || '').replace(/^"|"$/g, '').replace(/^Bearer\s+/i, '');
+    for (const k of ['token', 'access_token', 'auth_token', 'jwt', 'authToken']) {
+        let v = localStorage.getItem(k) || sessionStorage.getItem(k);
+        if (v) {
+            try { const j = JSON.parse(v); if (j && typeof j === 'object') v = j.token || j.access_token || ''; } catch (e) {}
+            v = clean(v);
+            if (looksJwt(v)) return v;
+        }
+    }
+    for (const store of [localStorage, sessionStorage]) {
+        for (let i = 0; i < store.length; i++) {
+            const k = store.key(i);
+            if (!k || k === 'current_user' || k.startsWith('conv_title_')) continue;
+            let v = store.getItem(k);
+            if (!v || v.length > 1000) continue;
+            try { const j = JSON.parse(v); if (j && typeof j === 'object') v = j.token || j.access_token || ''; } catch (e) {}
+            v = clean(v);
+            if (looksJwt(v)) return v;
+        }
+    }
+    const m = document.cookie.match(/(?:^|;\s*)(?:token|access_token|auth_token)=([^;]+)/);
+    if (m) { const v = clean(decodeURIComponent(m[1])); if (looksJwt(v)) return v; }
+    return null;
+}
+
+async function _api(path, opts = {}) {
+    const token = _getToken();
+    const headers = Object.assign({}, opts.headers || {});
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    let body = opts.body;
+    if (body && !(body instanceof FormData)) { headers['Content-Type'] = 'application/json'; body = JSON.stringify(body); }
+    const res = await fetch(path, { method: opts.method || 'GET', headers, body });
+    if (res.status === 401) {
+        _toast('登录状态已失效，请重新登录', 'error');
+        setTimeout(() => location.href = '/login.html', 800);
+        throw new Error('登录已过期');
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || ('请求失败 ' + res.status));
+    return data;
+}
+function _fmtTime(s) { try { return new Date(s).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }); } catch(e){ return s || ''; } }
+function _esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function _statusClass(s) { return ({'待处理':'pending','处理中':'processing','待反馈':'waiting','已解决':'resolved'})[s] || 'pending'; }
+function logoutSafe() {
+    if (typeof logout === 'function') { logout(); return; }
+    localStorage.removeItem('token'); localStorage.removeItem('current_user'); location.href = '/login.html';
+}
+function closeRequirementModal() { document.getElementById('requirementModal').style.display = 'none'; }
+function closeUserModalSafe() { document.getElementById('userModal').style.display = 'none'; }
+function openUserModalSafe() {
+    document.getElementById('userModal').style.display = 'flex';
+    document.getElementById('userModalTitle').textContent = '添加子节点账号';
+    ['userId','newUsername','newPassword','newDepartment'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    loadPositions();
+}
+
+/* ---------- 页面导航 ---------- */
+function switchMainTab(name) {
+    document.querySelectorAll('.tab-section').forEach(s => s.style.display = 'none');
+    const target = document.getElementById('tab-' + name);
+    if (target) target.style.display = '';
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.tab === name));
+    if (name === 'requirements') loadRequirements();
+    if (name === 'report' && typeof loadReport === 'function') { try { loadReport(); } catch(e) {} }
+    if (name === 'users') { loadUsers(); loadPositions(); }
+    if (name === 'knowledge') loadKnowledgeList();
+    if (name === 'settings') loadSettings();
+}
+function switchRightPanel(name) {
+    document.getElementById('assistantPanel').style.display = name === 'assistant' ? '' : 'none';
+    document.getElementById('listPanel').style.display = name === 'list' ? '' : 'none';
+    document.getElementById('assistantTabBtn').classList.toggle('active', name === 'assistant');
+    document.getElementById('listTabBtn').classList.toggle('active', name === 'list');
+    if (name === 'list') loadRequirements();
+    if (name === 'assistant') renderAssistantHistory();   // ★ 恢复历史
+}
+function quickAsk(q) {
+    document.getElementById('assistantInput').value = q;
+    switchRightPanel('assistant');
+    askAssistant();
+}
+
+/* ---------- 需求列表 ---------- */
+let _allRequirements = [];
+async function loadRequirements() {
+    const box = document.getElementById('requirementList');
+    if (!box) return;
+    try {
+        _allRequirements = await _api('/api/requirements/');
+        renderRequirementList();
+    } catch (e) {
+        box.innerHTML = '<div class="empty-state">加载失败：' + _esc(e.message) + '</div>';
+    }
+}
+function filterRequirements() { renderRequirementList(); }
+function renderRequirementList() {
+    const box = document.getElementById('requirementList');
+    const fs = document.getElementById('statusFilter').value;
+    const fp = document.getElementById('priorityFilter').value;
+    const list = _allRequirements.filter(r =>
+        (!fs || r.status === fs) && (!fp || r.priority === fp));
+    if (!list.length) {
+        box.innerHTML = '<div class="empty-state"><div class="big">📭</div>暂无符合条件的需求</div>';
+        return;
+    }
+    box.innerHTML = list.map(r => `
+        <div class="req-item" onclick="showRequirementDetail(${r.id})">
+            <div class="req-title">${_esc(r.title)}</div>
+            <div class="req-meta">
+                <span class="status-tag ${_statusClass(r.status)}">${_esc(r.status)}</span>
+                <span class="priority-${r.priority === '高' ? 'high' : r.priority === '中' ? 'medium' : 'low'}">${r.priority === '高' ? '🔴' : r.priority === '中' ? '🟡' : '🟢'} ${_esc(r.priority)}</span>
+                <span>👤 ${_esc(r.username || ('用户' + r.user_id))}</span>
+                <span>🕐 ${_fmtTime(r.created_at)}</span>
+            </div>
+        </div>`).join('');
+}
+
+/* ---------- 需求详情 + 管理员回复 ---------- */
+async function showRequirementDetail(reqId) {
+    document.getElementById('requirementModal').style.display = 'flex';
+    const body = document.getElementById('reqDetailBody');
+    body.innerHTML = '<div class="muted">加载中...</div>';
+    try {
+        const req = await _api('/api/requirements/' + reqId);
+        document.getElementById('reqModalTitle').textContent = '需求详情：' + req.title;
+        let msgsHtml = '';
+        let convId = req.conversation_id;
+        if (convId) {
+            const msgs = await _api('/api/conversations/' + convId + '/messages');
+            const visible = msgs.filter(m => !m.is_private);
+            msgsHtml = visible.map(m => `
+                <div class="req-detail-msg">
+                    <b>${m.sender_type === 'user' ? '👤 子节点' : m.sender_type === 'admin' ? '🛡 管理员' : '🤖 AI'}</b>
+                    <span class="muted" style="float:right;">${_fmtTime(m.created_at)}</span>
+                    <div style="margin-top:4px;">${_esc(m.content)}</div>
+                </div>`).join('') || '<div class="muted" style="padding:10px 0;">暂无沟通记录</div>';
+        }
+        body.innerHTML = `
+            <div style="margin-bottom:10px;">
+                <span class="status-tag ${_statusClass(req.status)}">${_esc(req.status)}</span>
+                <span class="priority-${req.priority === '高' ? 'high' : req.priority === '中' ? 'medium' : 'low'}" style="margin-left:10px;">优先级：${_esc(req.priority)}</span>
+                <span class="muted" style="margin-left:10px;">提交人：${_esc(req.username || ('用户' + req.user_id))}</span>
+            </div>
+            <div style="background:#f8fafc;border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.7;margin-bottom:12px;">${_esc(req.description)}</div>
+            <div style="font-weight:600;font-size:13px;margin-bottom:6px;">💬 沟通记录</div>
+            ${msgsHtml}
+            ${convId ? `
+            <div class="detail-reply-row">
+                <input type="text" id="adminReplyInput" placeholder="以管理员身份回复…（Enter 发送）"
+                    onkeydown="if(event.key==='Enter'){event.preventDefault();sendAdminReply('${convId}',${reqId});}">
+                <button class="btn-primary" type="button" onclick="sendAdminReply('${convId}',${reqId})">回复</button>
+            </div>` : ''}`;
+    } catch (e) {
+        body.innerHTML = '<div class="empty-state">加载失败：' + _esc(e.message) + '</div>';
+    }
+}
+async function sendAdminReply(convId, reqId) {
+    const input = document.getElementById('adminReplyInput');
+    const content = (input.value || '').trim();
+    if (!content) return;
+    try {
+        await _api('/api/conversations/' + convId + '/messages', { method: 'POST', body: { content } });
+        input.value = '';
+        _toast('已回复', 'success');
+        showRequirementDetail(reqId);
+    } catch (e) { _toast('回复失败：' + e.message, 'error'); }
+}
+
+/* ---------- 账号管理 ---------- */
+async function loadUsers() {
+    const tb = document.getElementById('usersTableBody');
+    if (!tb) return;
+    try {
+        const users = await _api('/api/admin/users/');
+        if (!users.length) { tb.innerHTML = '<tr><td colspan="6" class="muted">暂无账号</td></tr>'; return; }
+        tb.innerHTML = users.map(u => `
+            <tr>
+                <td>${u.id}</td><td>${_esc(u.username)}</td>
+                <td>${_esc(u.department || '—')}</td><td>${_esc(u.position || '—')}</td>
+                <td>${_fmtTime(u.created_at)}</td>
+                <td>
+                    <button class="btn-mini primary" onclick='editUser(${JSON.stringify({id:u.id,username:u.username,department:u.department||"",position:u.position||""}).replace(/'/g,"&#39;")})'>编辑</button>
+                    <button class="btn-mini danger" onclick="deleteUser(${u.id},'${_esc(u.username)}')">删除</button>
+                </td>
+            </tr>`).join('');
+    } catch (e) { tb.innerHTML = '<tr><td colspan="6" class="muted">加载失败：' + _esc(e.message) + '</td></tr>'; }
+}
+async function loadPositions() {
+    const sel = document.getElementById('newPosition');
+    if (!sel) return;
+    try {
+        const ps = await _api('/api/admin/positions/');
+        sel.innerHTML = '<option value="">（未设置）</option>' +
+            ps.map(p => `<option value="${_esc(typeof p === 'string' ? p : p.name)}">${_esc(typeof p === 'string' ? p : p.name)}</option>`).join('');
+    } catch (e) { /* 职位可选 */ }
+}
+function editUser(u) {
+    document.getElementById('userModal').style.display = 'flex';
+    document.getElementById('userModalTitle').textContent = '编辑账号：' + u.username;
+    document.getElementById('userId').value = u.id;
+    document.getElementById('newUsername').value = u.username;
+    document.getElementById('newPassword').value = '';
+    document.getElementById('newDepartment').value = u.department;
+    loadPositions().then(() => { document.getElementById('newPosition').value = u.position || ''; });
+}
+async function saveUser() {
+    const id = document.getElementById('userId').value;
+    const data = {
+        username: document.getElementById('newUsername').value.trim(),
+        department: document.getElementById('newDepartment').value.trim(),
+        position: document.getElementById('newPosition').value,
+    };
+    const pwd = document.getElementById('newPassword').value;
+    if (!data.username) { _toast('用户名不能为空', 'error'); return; }
+    if (!id && !pwd) { _toast('新账号需要设置密码', 'error'); return; }
+    if (pwd) data.password = pwd;
+    try {
+        if (id) await _api('/api/admin/users/' + id, { method: 'PUT', body: data });
+        else await _api('/api/admin/users/', { method: 'POST', body: data });
+        _toast(id ? '已保存修改' : '账号已创建', 'success');
+        closeUserModalSafe(); loadUsers();
+    } catch (e) { _toast('保存失败：' + e.message, 'error'); }
+}
+async function deleteUser(id, name) {
+    if (!await _confirmBox(`确定删除账号「${name}」？该操作不可恢复。`, '删除')) return;
+    try {
+        await _api('/api/admin/users/' + id, { method: 'DELETE' });
+        _toast('已删除', 'success'); loadUsers();
+    } catch (e) { _toast('删除失败：' + e.message, 'error'); }
+}
+
+/* ---------- 模型设置 ---------- */
+async function loadSettings() {
+    try {
+        const d = await _api('/api/settings/model');
+        document.getElementById('modelProvider').value = d.provider || 'zhipu';
+        document.getElementById('modelApiKey').value = d.api_key || '';
+        document.getElementById('modelName').value = d.model || '';
+        document.getElementById('modelBaseUrl').value = d.base_url || '';
+    } catch (e) { _toast('设置加载失败：' + e.message, 'error'); }
+}
+async function saveSettings() {
+    try {
+        await _api('/api/settings/model', { method: 'PUT', body: {
+            provider: document.getElementById('modelProvider').value,
+            api_key: document.getElementById('modelApiKey').value.trim(),
+            model: document.getElementById('modelName').value.trim(),
+            base_url: document.getElementById('modelBaseUrl').value.trim(),
+        }});
+        _toast('系统模型设置已保存', 'success');
+    } catch (e) { _toast('保存失败：' + e.message, 'error'); }
+}
+
+/* ---------- 知识库（含上传浮窗/切页不中断） ---------- */
+let _kbUploading = false;
+function onKnowledgeFilePicked(inp) {
+    const f = inp.files && inp.files[0];
+    document.getElementById('knowledgeFileName').textContent = f ? f.name : '未选择文件';
+}
+function _kbFloatShow(name) {
+    const f = document.getElementById('kbUploadFloat');
+    f.classList.remove('done'); f.style.display = 'flex';
+    document.getElementById('kbFloatTitle').textContent = '正在向量化入库…';
+    document.getElementById('kbFloatSub').textContent = name;
+}
+function _kbFloatDone(ok, msg) {
+    const f = document.getElementById('kbUploadFloat');
+    f.classList.toggle('done', ok);
+    document.getElementById('kbFloatTitle').textContent = ok ? '✅ 入库完成' : '❌ 入库失败';
+    document.getElementById('kbFloatSub').textContent = msg || '';
+    setTimeout(() => { f.style.display = 'none'; }, ok ? 2500 : 5000);
+}
+async function uploadKnowledgeFile() {
+    if (_kbUploading) { _toast('已有上传任务进行中，请稍候', 'info'); return; }
+    const inp = document.getElementById('knowledgeFile');
+    const file = inp.files && inp.files[0];
+    if (!file) { _toast('请先选择文件', 'error'); return; }
+    _kbUploading = true;
+    document.getElementById('kbUploadBtn').disabled = true;
+    _kbFloatShow(file.name);
+    try {
+        const fd = new FormData(); fd.append('file', file);
+        const r = await _api('/api/knowledge/upload', { method: 'POST', body: fd });
+        _kbFloatDone(true, (r && r.warning) ? ('⚠️ ' + r.warning) : `${file.name} · ${r.chunks}个切片`);
+        inp.value = '';
+        document.getElementById('knowledgeFileName').textContent = '未选择文件';
+        loadKnowledgeList();
+    } catch (e) {
+        _kbFloatDone(false, e.message);
+    } finally {
+        _kbUploading = false;
+        document.getElementById('kbUploadBtn').disabled = false;
+    }
+}
+async function saveKnowledgeText() {
+    const content = document.getElementById('knowledgeContent').value.trim();
+    const title = document.getElementById('knowledgeTitle').value.trim() || '未命名文档';
+    if (!content) { _toast('内容不能为空', 'error'); return; }
+    try {
+        await _api('/api/knowledge/text', { method: 'POST', body: { title, content } });
+        _toast('已保存到知识库', 'success');
+        document.getElementById('knowledgeContent').value = '';
+        document.getElementById('knowledgeTitle').value = '';
+        loadKnowledgeList();
+    } catch (e) { _toast('保存失败：' + e.message, 'error'); }
+}
+async function loadKnowledgeList() {
+    const box = document.getElementById('knowledgeList');
+    if (!box) return;
+    try {
+        const docs = await _api('/api/knowledge/');
+        if (!docs.length) { box.innerHTML = '<div class="muted">暂无文档，上传后AI助手即可引用</div>'; return; }
+        box.innerHTML = docs.map(d => `
+            <div class="knowledge-item">
+                <span>📄 <b>${_esc(d.title)}</b> <span class="muted">${d.chunks}个切片 · ${_fmtTime(d.created_at)}</span></span>
+                <button class="btn-mini danger" onclick="deleteKnowledgeDoc('${_esc(d.doc_id)}')">删除</button>
+            </div>`).join('');
+    } catch (e) { box.innerHTML = '<div class="muted">加载失败：' + _esc(e.message) + '</div>'; }
+}
+async function deleteKnowledgeDoc(docId) {
+    if (!await _confirmBox('确定删除该文档的所有切片？', '删除')) return;
+    try {
+        await _api('/api/knowledge/doc/' + docId, { method: 'DELETE' });
+        _toast('已删除', 'success'); loadKnowledgeList();
+    } catch (e) { _toast('删除失败：' + e.message, 'error'); }
+}
+
+/* ---------- AI助手（聊天布局 + localStorage历史持久化） ---------- */
+const ASSIST_HIST_KEY = 'parent_assistant_history_v1';
+function _assistHistLoad() { try { return JSON.parse(localStorage.getItem(ASSIST_HIST_KEY) || '[]'); } catch (e) { return []; } }
+function _assistHistSave(arr) { try { localStorage.setItem(ASSIST_HIST_KEY, JSON.stringify(arr.slice(-50))); } catch (e) {} }
+function renderAssistantHistory() {
+    const box = document.getElementById('assistantMessages');
+    if (!box || box.dataset.restored === '1') return;
+    const hist = _assistHistLoad();
+    if (hist.length) {
+        box.querySelector('.assistant-welcome')?.remove();
+        box.insertAdjacentHTML('beforeend', hist.map(h => `
+            <div class="ans-q-bubble"><span>${_esc(h.q)}</span></div>
+            <div class="ans-block">${_esc(h.a)}</div>`).join(''));
+        box.dataset.restored = '1';
+        box.lastElementChild?.scrollIntoView({ behavior: 'smooth' });
+    }
+}
+function clearAssistantHistory() {
+    _assistHistSave([]);
+    const box = document.getElementById('assistantMessages');
+    box.innerHTML = `<div class="assistant-welcome"><h3>欢迎回来，管理员 👋</h3>
+        <div class="muted">我可以帮你查询需求、分析重点，回答基于企业知识库的问题。试试快捷提问，或直接在底部输入。</div></div>`;
+    box.dataset.restored = '';
+    _toast('已清空对话历史', 'success');
+}
+async function askAssistant() {
+    const input = document.getElementById('assistantInput');
+    const q = (input.value || '').trim();
+    if (!q) return;
+    const box = document.getElementById('assistantMessages');
+    input.value = '';
+    box.querySelector('.assistant-welcome')?.remove();
+    box.insertAdjacentHTML('beforeend', `<div class="ans-q-bubble"><span>${_esc(q)}</span></div>`);
+    box.insertAdjacentHTML('beforeend', `<div class="ans-block" id="ansLoading">⏳ 检索知识库并思考中…</div>`);
+    box.lastElementChild.scrollIntoView({ behavior: 'smooth' });
+    try {
+        const d = await _api('/api/knowledge/ask', { method: 'POST', body: { question: q } });
+        document.getElementById('ansLoading')?.remove();
+        const a = d.answer || '（无回答）';
+        box.insertAdjacentHTML('beforeend', `<div class="ans-block">${_esc(a)}</div>`);
+        const hist = _assistHistLoad(); hist.push({ q, a }); _assistHistSave(hist);
+    } catch (e) {
+        document.getElementById('ansLoading')?.remove();
+        box.insertAdjacentHTML('beforeend', `<div class="ans-block" style="color:#dc2626;">提问失败：${_esc(e.message)}</div>`);
+    }
+    box.lastElementChild.scrollIntoView({ behavior: 'smooth' });
+}
+
+/* ---------- 初始化 ---------- */
+(function init() {
+    const u = JSON.parse(localStorage.getItem('current_user') || 'null');
+    if (u && u.username) document.getElementById('usernameDisplay').textContent = u.username;
+    switchRightPanel('assistant');   // ★ 默认进AI助手
+})();
+</script>
+</body>
+</html>

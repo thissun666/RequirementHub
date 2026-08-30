@@ -1,0 +1,25 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# PyInstaller 产物
+build/
+dist/
+*.spec
+
+# 运行时数据（数据库与用户上传文件严禁入库）
+*.db
+*.sqlite3
+uploads/
+logs/
+
+# 环境变量与密钥
+.env
+
+# IDE / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
