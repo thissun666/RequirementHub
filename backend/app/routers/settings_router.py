@@ -35,7 +35,7 @@ def list_available_models(current_user: models.User = Depends(auth.get_current_a
 
 
 
-@router.post("/model")
+@router.api_route("/model", methods=["POST", "PUT"])
 def update_model_settings(
     new_settings: ModelSettings,
     current_user: models.User = Depends(auth.get_current_admin_user)  # 仅父节点可修改

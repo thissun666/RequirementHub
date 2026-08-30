@@ -4,6 +4,8 @@ import os
 import sys
 import pkgutil
 import importlib
+from fastapi.routing import APIRoute
+
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query, APIRouter
@@ -46,15 +48,25 @@ app.add_middleware(
 )
 
 # ---------- 中间件1：API路径斜杠自适应 ----------
+# ---------- 中间件1：API路径斜杠自适应（方法感知版） ----------
 @app.middleware("http")
 async def api_slash_redirect(request: Request, call_next):
     path = request.url.path
     if path.startswith("/api"):
-        known = {getattr(r, "path", None) for r in app.routes}
-        if path not in known:
-            if path + "/" in known:
+        method = request.method
+
+        def _hit(p: str) -> bool:
+            # 该路径上是否存在"接受当前HTTP方法"的路由
+            return any(
+                isinstance(r, APIRoute) and r.path == p
+                and (r.methods is None or method in r.methods)
+                for r in app.routes
+            )
+
+        if not _hit(path):
+            if _hit(path + "/"):
                 request.scope["path"] = path + "/"
-            elif path.endswith("/") and path.rstrip("/") in known:
+            elif path.endswith("/") and _hit(path.rstrip("/")):
                 request.scope["path"] = path.rstrip("/")
     return await call_next(request)
 

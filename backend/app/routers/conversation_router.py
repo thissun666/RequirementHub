@@ -217,13 +217,12 @@ def _process_ai_logic(conversation_id: str):
         if not conv:
             return
         conv_mode = getattr(conv, "mode", None) or "requirement"
+
         all_msgs = db.query(models.Message).filter(
             models.Message.conversation_id == conversation_id
         ).order_by(models.Message.created_at.asc()).all()
 
-        # ★ 隐私上下文分离：
-        #   history_all     = 全部 user/ai 消息（仅助手模式自用）
-        #   history_visible = 剔除 is_private 后的消息（跟进/需求收集/摘要用）
+        # 隐私上下文分离：history_all=全量(助手模式自用)；history_visible=剔除私密(其余用)
         history_all, history_visible = [], []
         for m in all_msgs:
             if m.sender_type not in ("user", "ai"):
@@ -241,11 +240,10 @@ def _process_ai_logic(conversation_id: str):
 
         last_user = next((m for m in reversed(all_msgs)
                           if m.sender_type == "user" and not getattr(m, "is_private", False)), None)
-
         user = db.query(models.User).filter(models.User.id == conv.user_id).first()
         uname = user.username if user else f"用户{conv.user_id}"
 
-        # ===== 模式A：助手聊天（★知识库+本人需求感知；全量上下文；回复标记私密）=====
+        # ===== 模式A：助手聊天（知识库+本人需求感知；回复标记私密）=====
         if conv_mode == "chat":
             last_q = next((m for m in reversed(all_msgs) if m.sender_type == "user"), None)
             kb_part, sys_ctx = "（知识库未检索到相关内容）", "（暂无数据）"
@@ -256,7 +254,7 @@ def _process_ai_logic(conversation_id: str):
                         kb_part = "\n\n".join(f"[{h['title']}] {h['content']}" for h in hits)
                 except Exception as e:
                     logger.warning(f"助手知识库检索失败: {e}")
-                sys_ctx = _user_requirements_context(db, conv.user_id)
+            sys_ctx = _user_requirements_context(db, conv.user_id)
             sys_prompt = (
                 "你是企业员工的智能助手。回答时综合三类信息：\n"
                 "1)【该员工的需求数据】：问'我的需求/申请进度'等时依据此回答；\n"
@@ -266,17 +264,15 @@ def _process_ai_logic(conversation_id: str):
                 f"【该员工的需求数据】\n{sys_ctx}\n\n【知识库资料】\n{kb_part[:4000]}"
             )
             reply = _call_llm_for_user(db, user,
-                [{"role": "system", "content": sys_prompt}, *history_all],
-                0.6)
+                                       [{"role": "system", "content": sys_prompt}, *history_all], 0.6)
             if reply:
                 db.add(models.Message(conversation_id=conversation_id, sender_type="ai",
-                                      content=reply, is_private=True,
-                                      created_at=datetime.utcnow()))
+                                      content=reply, is_private=True, created_at=datetime.utcnow()))
                 conv.updated_at = datetime.utcnow()
                 db.commit()
             return
 
-        # ===== 模式B：跟进（上下文只用非私密历史）=====
+        # ===== 模式B：跟进（已提交需求，管理员可见）=====
         if conv.requirement_id is not None:
             req = db.query(models.Requirement).filter(
                 models.Requirement.id == conv.requirement_id).first()
@@ -289,43 +285,62 @@ def _process_ai_logic(conversation_id: str):
                 "timestamp": str(datetime.utcnow())
             })
             reply = _call_llm_for_user(db, user,
-                [{"role": "system", "content": "你是需求跟进助手。该需求已提交给管理员处理。请确认已同步管理员，并就用户补充内容简短回应，两三句以内，不要重新发起需求收集。"},
-                 *history_visible],
-                0.5)
+                                       [{"role": "system", "content": "你是需求跟进助手。该需求已提交给管理员处理。请确认已同步管理员，并就用户补充内容简短回应，两三句以内，不要重新发起需求收集。"},
+                                        *history_visible], 0.5)
             if reply:
                 db.add(models.Message(conversation_id=conversation_id, sender_type="ai",
-                                      content=reply,
-                                      created_at=datetime.utcnow()))
+                                      content=reply, created_at=datetime.utcnow()))
                 conv.updated_at = datetime.utcnow()
                 db.commit()
-            logger.info("💬 [跟进] 已推送管理员并回复子节点")
+                logger.info("💬 [跟进] 已推送管理员并回复子节点")
             return
 
-        # ===== 模式C：需求收集（追问与摘要只看非私密历史）=====
+        # ===== 模式C：需求收集 =====
         round_num = len([m for m in all_msgs if m.sender_type == "ai"])
         logger.info(f"🤖 [后台] AI逻辑启动: 可见历史{len(history_visible)}条, 轮次{round_num}")
+
         need_summary = round_num >= ask_ai_service.MAX_ROUNDS
         if not need_summary:
             question = ask_ai_service.generate_question(history_visible, round_num)
             if question:
                 db.add(models.Message(conversation_id=conversation_id, sender_type="ai",
-                                      content=question,
-                                      created_at=datetime.utcnow()))
+                                      content=question, created_at=datetime.utcnow()))
                 conv.updated_at = datetime.utcnow()
                 db.commit()
                 logger.info(f"💬 [后台] AI追问已生成: {question[:50]}...")
-                return
+            return
 
         logger.info("ℹ️ [后台] AI判断无需追问，转入需求生成")
         summary = summarize_ai_service.summarize(history_visible)
         logger.info(f"📝 AI生成摘要: {summary}")
 
+        # ★★★ 标题修复：AI摘要标题缺失/为默认值时，回退用员工自己起的会话名 ★★★
+        def _bad_title(t):
+            t = (t or "").strip()
+            return (not t) or t in ("未命名需求", "未命名", "新需求")
+
+        ai_title, final_desc, final_pri = "", "", "中"
+        if isinstance(summary, dict):
+            ai_title = (summary.get("title") or "").strip()
+            final_desc = (summary.get("description") or "").strip()
+            final_pri = summary.get("suggested_priority") or "中"
+        conv_title = (conv.title or "").strip()
+        if _bad_title(ai_title) and not _bad_title(conv_title):
+            ai_title = conv_title  # 用会话标题兜底
+        final_title = (ai_title or "未命名需求")[:100]
+        if not final_desc:
+            final_desc = "\n".join(m.get("content", "") for m in history_visible[:6])[:2000]
+        if final_pri not in ("高", "中", "低"):
+            final_pri = "中"
+        if _bad_title(conv.title):
+            conv.title = final_title  # 侧边栏同步显示有意义的标题
+
         new_req = models.Requirement(
             conversation_id=conversation_id,
             user_id=conv.user_id,
-            title=summary["title"],
-            description=summary["description"],
-            priority=summary["suggested_priority"],
+            title=final_title,
+            description=final_desc,
+            priority=final_pri,
             status=models.RequirementStatus.PENDING,
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
@@ -333,17 +348,17 @@ def _process_ai_logic(conversation_id: str):
         db.add(new_req)
         db.flush()
 
-        final_priority = summary["suggested_priority"]
+        final_priority = final_pri
         try:
             rule_score = priority_service.calculate_priority(new_req, user, db)
-            final_priority = priority_service.final_priority(rule_score, summary["suggested_priority"])
+            final_priority = priority_service.final_priority(rule_score, final_pri)
             new_req.priority = final_priority
         except Exception as e:
             logger.warning(f"优先级计算失败，使用AI建议值: {e}")
 
         db.add(models.Message(
             conversation_id=conversation_id, sender_type="ai",
-            content=f"✅ 您的需求「{summary['title']}」已整理并提交给管理员，请耐心等待处理。",
+            content=f"✅ 您的需求「{final_title}」已整理并提交给管理员，请耐心等待处理。",
             created_at=datetime.utcnow()
         ))
         conv.requirement_id = new_req.id
@@ -353,20 +368,19 @@ def _process_ai_logic(conversation_id: str):
         websocket_manager.notify_admins_threadsafe({
             "type": "new_requirement",
             "requirement_id": new_req.id,
-            "title": summary["title"],
+            "title": final_title,
             "user_id": conv.user_id,
             "username": uname,
             "timestamp": str(datetime.utcnow())
         })
-        logger.info(f"✅ [后台] 需求已创建: ID={new_req.id}, 优先级={final_priority}")
+        logger.info(f"✅ [后台] 需求已创建: ID={new_req.id}, 标题={final_title}, 优先级={final_priority}")
 
     except Exception as e:
         logger.error(f"❌ [后台] AI处理失败: {e}")
         db.rollback()
     finally:
         db.close()
-        _ai_processing.discard(conversation_id)
-
+        _ai_processing.discard(conversation_id)   # ★ 必须在finally内：任何return路径都会执行
 
 @router.post("/{conversation_id}/messages", response_model=schemas.MessageOut)
 def send_message(

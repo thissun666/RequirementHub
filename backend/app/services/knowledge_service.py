@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
 TOP_K = 5
+_MAX_CHUNKS = 400  # ★ 单文档最多入库400片，防止超大文档embedding数小时
 
 
 def _chunk_text(text: str):
@@ -78,11 +79,11 @@ def _embed_batch(texts, max_retries=5, base_delay=2):
                 raise
             logger.warning(f"向量化限流/失败，{delay}s后重试({attempt + 1}/{max_retries}): {e}")
             _time.sleep(delay)
-            delay = min(delay * 2, 45)
+            delay = min(delay * 2, 8)
 
 
 def _embed_query(q):
-    """★ 问题向量化：轻量重试(最多2次≈3s)，失败立即返回None转关键词——杜绝提问卡2分钟"""
+    """问题向量化：轻量重试(最多2次≈3s)，失败立即转关键词——杜绝提问卡2分钟"""
     try:
         return _embed_batch([q], max_retries=2, base_delay=1)[0]
     except Exception as e:
@@ -99,19 +100,30 @@ def add_document(db, title: str, content: str, source_name: str = None):
     if not chunks:
         raise ValueError("未能切分出有效内容")
 
-    vectors, warning = None, None
+    warning = None
+    total_pieces = len(chunks)
+    if total_pieces > _MAX_CHUNKS:
+        warning = f"文档较大（共{total_pieces}片），已只入库前{_MAX_CHUNKS}片；建议拆分后分次上传以获得完整检索"
+        chunks = chunks[:_MAX_CHUNKS]
+        logger.warning(f"📄 文档过大截断: {title} {total_pieces}片 → {_MAX_CHUNKS}片")
+
+    vectors = None
     try:
         vectors = []
-        for i in range(0, len(chunks), 4):
-            batch = chunks[i:i + 4]
+        batch_size = 8
+        batches = [chunks[i:i + batch_size] for i in range(0, len(chunks), batch_size)]
+        for bi, batch in enumerate(batches):
             vectors.extend(_embed_batch(batch, max_retries=5, base_delay=2))
-            if i + 4 < len(chunks):
-                _time.sleep(1.5)
+            if bi % 5 == 0:
+                logger.info(f"📚 向量化进度: {bi + 1}/{len(batches)} 批")
+            if bi < len(batches) - 1:
+                _time.sleep(1.0)
         if len(vectors) != len(chunks):
             vectors = None
     except Exception as e:
         logger.warning(f"向量化整体失败，按关键词模式入库: {e}")
         vectors = None
+
     if vectors is None:
         warning = "向量服务繁忙，已按关键词模式入库（检索正常可用；之后可删除重传以获得语义检索）"
 
@@ -183,7 +195,7 @@ def _requirements_context(db) -> str:
     return "\n".join(lines)
 
 
-# ---------- 管理员智能助手：单次LLM调用同时感知系统数据+知识库 ----------
+# ---------- 管理员智能助手 ----------
 def assistant_ask(db, question: str):
     q = (question or "").strip()
     if not q:
